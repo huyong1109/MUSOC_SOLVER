@@ -1,0 +1,179 @@
+MODULE TIMCOM_GENERAL
+!PARAMETER
+  REAL,PARAMETER::G=980.
+
+!TITLE
+  CHARACTER(10)::CASE_NAME
+  CHARACTER(63)::DSCRIB
+  CHARACTER(96)::WORKDIR
+  INTEGER::RUNS
+  INTEGER::ISAV
+  INTEGER::SCRNOUT
+  INTEGER::CPSAV
+  NAMELIST /CASE_INFO/ CASE_NAME,DSCRIB
+  NAMELIST /WORK_DIR/ WORKDIR
+  NAMELIST /RUN_STEPS/ RUNS
+  NAMELIST /SNAPSHOT_OUTPUT_STEPS/ ISAV
+  NAMELIST /SCREEN_OUTPUT_STEPS/ SCRNOUT 
+  NAMELIST /CHECKPOINT_STEPS/ CPSAV
+
+!RUNNING SIGNAL
+  INTEGER,PARAMETER :: &
+  TIMCOM_INIT=0,TIMCOM_RUN=1,TIMCOM_FINAL=2, &
+  TIMCOM_COND=0,TIMCOM_FORCE=1
+
+!VARIABLES OUTPUT SIGNAL
+  LOGICAL::VAR_I0J0K1_OUTPUT=.TRUE.,&
+           VAR_I0J0K1_HDF5=.TRUE.,&
+           UVAR_OUTPUT=.TRUE., &
+           VVAR_OUTPUT=.TRUE., &
+           SVAR_OUTPUT=.TRUE., &
+           TVAR_OUTPUT=.TRUE., &
+           PVAR_OUTPUT=.TRUE.
+  LOGICAL::VAR_I0J0K0_OUTPUT=.TRUE.,&
+           WVAR_OUTPUT=.TRUE.
+  LOGICAL::VAR_FLUXES_OUTPUT=.FALSE.
+
+  NAMELIST /VAR_I0J0K1_OUTPUT_SIGNALS/ VAR_I0J0K1_OUTPUT,VAR_I0J0K1_HDF5,UVAR_OUTPUT,VVAR_OUTPUT,SVAR_OUTPUT,TVAR_OUTPUT,PVAR_OUTPUT
+  NAMELIST /VAR_I0J0K0_OUTPUT_SIGNALS/ VAR_I0J0K0_OUTPUT,WVAR_OUTPUT
+  NAMELIST /VAR_I0J0_OUTPUT_SIGNALS/ VAR_FLUXES_OUTPUT
+!LOG FILE
+  INTEGER,PARAMETER :: FNO_LOG=14
+
+!RESTART_SIGNAL RESTARTSIG
+  INTEGER :: RESTARTSIG = 0
+
+!STOP_SIGNAL
+  INTEGER,PARAMETER :: &
+  TIMCOM_FAILURE=-2,   &
+  TIMCOM_CONTINUE=-1,  &
+  TIMCOM_FINISH=0,     &
+  TIMCOM_STOP=1,       &
+  TIMCOM_REASSIGN=2
+  INTEGER :: STOPSIG = -1
+
+!MPASS
+  INTEGER :: MPASS = 1
+  NAMELIST /MULTI_TIMESTEP/ MPASS
+
+!ATMOSPHERIC FORCING
+  CHARACTER(96)::ATMOSFILE='namelist000.ATMO'
+  INTEGER::T0YEAR=2011
+  INTEGER::T0MONTH=01
+  INTEGER::T0DAY=02
+  INTEGER::T0HOUR=00
+  INTEGER::T0MINUT=00
+  NAMELIST /ATMO_FORCING/ATMOSFILE
+  NAMELIST /TIME0/T0YEAR,T0MONTH,T0DAY,T0HOUR,T0MINUT
+CONTAINS
+
+SUBROUTINE TIMCOM_GETARGS
+  CHARACTER(128) :: ARG
+  INTEGER,EXTERNAL :: IARGC
+  INTEGER :: istat 
+
+  IF ( IARGC() .gt. 0 ) THEN
+    CALL GETARG(1,ARG)
+    READ(ARG,"(I)",IOSTAT=istat)RESTARTSIG
+    IF ( istat /= 0 ) THEN
+       WRITE(*,*)"Wrong restart signal argument following the executable file,"
+       WRITE(*,*)"I'd better stop !"
+       STOPSIG=TIMCOM_FAILURE
+       CALL TIMCOM_STOPSIG_SIGNAL
+    ENDIF
+  ENDIF
+END SUBROUTINE TIMCOM_GETARGS
+
+
+SUBROUTINE TIMCOM_OPENLOG
+CHARACTER(LEN=160) :: FILENAME
+!-----------------------
+! OPEN General log files
+!-----------------------
+! Run history data
+
+  !FILENAME=TRIM(WORKDIR)//'run.log'
+  FILENAME='run.log'
+  OPEN(FNO_LOG,file=FILENAME)
+
+END SUBROUTINE TIMCOM_OPENLOG
+
+!######################################
+
+SUBROUTINE TIMCOM_STOPSIG_READ
+  LOGICAL :: alive
+  INTEGER :: istat
+  INQUIRE(FILE="stoprun",EXIST=alive)
+  IF ( alive ) THEN
+    OPEN(42,file='stoprun')
+    READ(42,"(I7)",IOSTAT=istat) STOPSIG 
+    CLOSE(42,STATUS="DELETE")
+    IF ( istat /= 0 ) THEN
+       WRITE(*,*)"I got wrong stoprun signal!"
+       WRITE(*,*)"stoprun signal must be"
+       WRITE(*,*)" 0 : finish the job"
+       WRITE(*,*)" 1 : checkpoint then stop the job"
+       WRITE(*,*)" 2 or above : re-assign the max timestep"
+       WRITE(*,*)""
+       WRITE(*,*)"I'll continue to run the job"
+       STOPSIG = TIMCOM_CONTINUE
+    ENDIF
+    IF ( STOPSIG < TIMCOM_FINISH ) THEN
+       STOPSIG = TIMCOM_CONTINUE
+    ENDIF
+  ENDIF
+END SUBROUTINE TIMCOM_STOPSIG_READ
+
+!######################################
+
+SUBROUTINE TIMCOM_CLOSELOG
+  LOGICAL :: lopen
+  INQUIRE(UNIT=FNO_LOG,OPENED=lopen)
+  IF ( lopen ) THEN
+    CLOSE(FNO_LOG)
+  ENDIF
+END SUBROUTINE TIMCOM_CLOSELOG
+
+!######################################
+
+SUBROUTINE TIMCOM_STOPSIG_SIGNAL
+  SELECT CASE (STOPSIG)
+  CASE (-1)
+    WRITE(*,*)"running the job continully"
+  CASE (0)
+    CALL TIMCOM_CLOSELOG
+    WRITE(*,*)"job successful complete"
+    STOP 0 
+  CASE (1)
+    CALL TIMCOM_CLOSELOG
+    WRITE(*,*)"checkpoint, then stop the job!"
+    STOP 1 
+  CASE (-2)
+    CALL TIMCOM_CLOSELOG
+    WRITE(*,*)"It's blow-up, job failure!"
+    STOP 2 
+  CASE DEFAULT
+    WRITE(*,*)"re-assign the timestep"
+  END SELECT
+END SUBROUTINE TIMCOM_STOPSIG_SIGNAL
+
+END MODULE TIMCOM_GENERAL
+
+
+pure function dnum (string)
+
+  character(len=*), intent(in) :: string
+
+  real(KIND(0.D0))             :: dnum
+
+  read(string, *) dnum
+
+end function dnum
+
+
+MODULE OPFREQ !ZWM
+!Miscellaneous output frequency controls
+
+INTEGER::M1,M2,M3,M4,M5,M6,M7,M8,M5M
+
+END MODULE OPFREQ
