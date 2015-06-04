@@ -1799,21 +1799,41 @@ real :: seavol,rivervol,storet,stores
 
   SUBROUTINE FS_SOLVER
     ! local variables for compare bicg and EVP 
+    real, parameter  :: pi=3.1415926535897932384626433832795029
     real*8 :: err1,err2
     real*8 :: mineig, maxeig
     real*8, dimension(i0,j0) :: x1
-    x1(:,:) = x(:,:)
-    !S(:,:) = S(:,:)*OAC(:,:)
+
+    DO J=1,J2+2
+      DO I=1,I2+2
+        X(I,J)= cos((I-2)/real(I2)*2.0*pi )
+      END DO
+    END DO
+    write(*,*) "intial value"
+    write(*,'(3e13.3)') X(1,10),X(2,10),X(3,10)
+    write(*,'(3e13.3)') X(I2,10),X(I2+1,10),X(I2+2,10)
+    !X = 1.0
+    X1(:,:) = X(:,:)
+    S(:,:) = 0.0
+    DO J=2,J2+1
+      DO I=2,I2+1
+        S(I-1,J-1)=AL(I-1,J-1)*X(I-1,J)+AB(I-1,J-1)*X(I,J-1)+AC(I-1,J-1)*X(I,J)+AR(I-1,J-1)*X(I+1,J)+AT(I-1,J-1)*X(I,J+1)
+      END DO
+    END DO
+
+    X(3:I2-1,3:J2-1) = 0.0
+!TS    X1(:,:) = X(:,:)
+
     IF (FL_EVP_STP == 0) THEN ! DTRAC, NPBTAI
       CALL REPBIR(AL,AB,AC,AR,AT,RINV,RINV1,DUM0,DUM1,DUM2,S,H,X,IE,I0,I2,I0,I2,NB0)        
-      call p_bicgstab_le(al,ab,ac,ar,at,s,x1,al,ab,ac,ar,at,i2,j2)
-
+      !call p_bicgstab_le(al,ab,ac,ar,at,s,x1,al,ab,ac,ar,at,i2,j2)
       do j = 2,j2+1
         do i = 2,i2+1
           err1  = x1(i,j) - x(i,j) 
           err2  = min(abs(x1(i,j)),abs(x(i,j)))
           if ( abs(err1) .ge. 1.0 .and. err1/err2 .ge. 1.0e-1 ) then
-           write(*,'(2I5,5e13.3)') i,j,x1(i,j),x(i,j),oac(i-1,j-1),err1,err1/err2
+          ! write(*,'(2I5,5e13.3)') i,j,x1(i,j),x(i,j),oac(i-1,j-1),err1,err1/err2
+           write(*,'(2I5,5e13.3)') i,j,x1(i,j),x(i,j)
           end if 
         end do 
       end do 
@@ -1828,7 +1848,9 @@ real :: seavol,rivervol,storet,stores
       close(110)
       stop
     ELSE IF (FL_EVP_STP == 1) THEN ! GLOBAL
-      NITERLOOP: DO NITER=1,2 ! NITER IS THE BIR SWEEP NUMBER
+
+      NITERLOOP: DO NITER=1,5 ! NITER IS THE BIR SWEEP NUMBER
+        write(*,*) 'NITER =', NITER
         INC=IBIR/2
         DO N=1,NBIR ! N IS THE BIR LONGITUDINAL BAND #
           IL=(N-1)*INC+1
@@ -1884,26 +1906,28 @@ real :: seavol,rivervol,storet,stores
                 X(1,J)=X(I1,J)
                 X(I0,J)=X(2,J)
               END DO
+              WRITE(*,*)'TEST',NITER,MAXVAL(abs(X(2:i2+1,2:j2+1)-X1(2:i2+1,2:j2+1)))
 #endif
 !!            END IF
           END IF
         END DO
       END DO NITERLOOP      
-      call p_bicgstab_le(al,ab,ac,ar,at,s,x1,al,ab,ac,ar,at,i2,j2)
+      !call p_bicgstab_le(al,ab,ac,ar,at,s,x1,al,ab,ac,ar,at,i2,j2)
 
       do j = 2,j2+1
         do i = 2,i2+1
           err1  = x1(i,j) - x(i,j) 
-          err2  = min(abs(x1(i,j)),abs(x(i,j)))
-          if ( abs(err1) .ge. 1.0 .and. err1/err2 .ge. 1.0e-1 ) then
-           write(*,'(2I5,5e13.3)') i,j,x1(i,j),x(i,j),oac(i-1,j-1),err1,err1/err2
+          err2  = max(abs(x1(i,j)),abs(x(i,j)))
+          if ( abs(err1) .ge. 1.0e-3 ) then
+           !write(*,'(2I5,5e13.3)') i,j,x1(i,j),x(i,j),oac(i-1,j-1),err1,err1/err2
+           write(*,'(2I5,5e13.3)') i,j,x1(i,j),x(i,j)
           end if 
         end do 
       end do 
       err1 = maxval(abs(x1-x))
       err2 = norm2(x1-x)
       
-      write(*,'(A20,3f15.5)') "EVP-BICG Max Norm2",err1,err2,norm2(x)
+      write(*,'(A20,3e15.8)') "EVP-TURE Max Norm2",err1,err2,norm2(x)
       write(*,'(A20,2I)') "Max error at", maxloc(abs(x1-x))
       write(*,'(A20,2I)') "Dimensions", I2,J2
       open(unit=110,file="evp-bicg.bin",action="write",form="unformatted")
@@ -1921,17 +1945,22 @@ real :: seavol,rivervol,storet,stores
         do i = 2,i2+1
           err1  = x1(i,j) - x(i,j) 
           err2  = max(abs(x1(i,j)),abs(x(i,j)))
-          !if (err2 .ge. 1.0e-3 .and. err1/err2 .ge. 1.0e-1 ) then
-            write(*,'(2I5,5e13.3)') i,j,x1(i,j),x(i,j),oac(i-1,j-1),err1,err1/err2
-          !end if 
+          if ( abs(err1) .ge. 1.0e-3 ) then
+           !write(*,'(2I5,5e13.3)') i,j,x1(i,j),x(i,j),oac(i-1,j-1),err1,err1/err2
+            write(*,'(2I5,5e13.3)') i,j,x1(i,j),x(i,j)
+          end if 
         end do 
       end do 
       err1 = maxval(abs(x1-x))
       err2 = norm2(x1-x)
 
-      write(*,'(A20,3f15.5)') "EVP-BICG Max Norm2",err1,err2,norm2(x)
+      write(*,'(A20,3e15.8)') "BICG-TURE Max Norm2",err1,err2,norm2(x)
       write(*,'(A20,2I)') "Max error at", maxloc(abs(x1-x))
       write(*,'(A20,2I)') "Dimensions", I2,J2
+      open(unit=110,file="pcsi-bicg.bin",action="write",form="unformatted")
+      write(110) x1-x
+      close(110)
+
       stop
 
     END IF    
