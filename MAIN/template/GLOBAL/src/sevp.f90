@@ -7,6 +7,214 @@
 ! *ELLIPTIC SOLVER *
 ! ******************
 ! ----------------------------------------------------------------------
+! ----------------------------------------------------------------------
+      SUBROUTINE REP1(AX,AY,BB,CX,CY,RINV,RINV1,DUM0,DUM1,DUM2,F,H,X,IE, &
+       I0,I2,NBLK)
+! ----------------------------------------------------------------------
+      INTEGER, INTENT (IN) :: I0,I2,NBLK
+      REAL*8 RINV,RINV1,DUM0,DUM1,DUM2,X,H
+      DIMENSION AX(I2,1),AY(I2,1),BB(I2,1),CX(I2,1),CY(I2,1), &
+       RINV(I2,I2,1),RINV1(I2,I2,1),H(I0,1),IE(1),DUM0(I2,1),DUM1(1), &
+       DUM2(1),F(I2,1),X(I0,1)
+! PERIODIC
+      I1=I0-1
+      JS=1
+      DO 150 NB=1,NBLK
+      JF=IE(NB)-2
+      DO 105 J=JS,JF
+! PERIODIC
+      X(1,J+1)=X(I1,J+1)
+      X(I0,J+1)=X(2,J+1)
+      DO 105 I=1,I2
+ 105  X(I+1,J+2)=(F(I,J)-AX(I,J)*X(I,J+1)-AY(I,J)*X(I+1,J)-BB(I,J)* &
+       X(I+1,J+1)-CX(I,J)*X(I+2,J+1))/CY(I,J)
+! PERIODIC
+      X(1,JF+2)=X(I1,JF+2)
+      X(I0,JF+2)=X(2,JF+2)
+      IF (NB.EQ.NBLK) GO TO 150
+      J=IE(NB)-1
+      DO 115 I=1,I2
+ 115  DUM1(I)=F(I,J)-AX(I,J)*X(I,J+1)-AY(I,J)*X(I+1,J)-BB(I,J)* &
+       X(I+1,J+1)-CX(I,J)*X(I+2,J+1)-CY(I,J)*X(I+1,J+2)
+      J=IE(NB)
+      DO 120 N=1,I2
+      DUM2(N)=0.
+      DO 118 M=1,I2
+ 118  DUM2(N)=DUM2(N)+DUM1(M)*RINV1(M,N,NB)
+      DUM0(N,NB)=X(N+1,J)
+ 120  X(N+1,J)=X(N+1,J)-DUM2(N)
+! PERIODIC
+      X(1,J)=X(I1,J)
+      X(I0,J)=X(2,J)
+ 150  JS=IE(NB)
+      DO 300 NBS=1,NBLK
+      NB=NBLK-NBS+1
+      JS=1
+      IF (NB.NE.1) JS=IE(NB-1)
+      JF=IE(NB)-2
+      IF (NB.EQ.NBLK) GO TO 201
+      J=IE(NB)
+      DO 200 N=1,I2
+ 200  X(N+1,J)=DUM0(N,NB)
+ 201  N=IE(NB)
+      DO 202 J=JS,N
+      DO 202 I=1,I0
+ 202  H(I,J)=0.
+      J=IE(NB)-1
+! PERIODIC
+      X(1,J+1)=X(I1,J+1)
+      X(I0,J+1)=X(2,J+1)
+      DO 210 I=1,I2
+ 210  DUM1(I)=F(I,J)-AX(I,J)*X(I,J+1)-AY(I,J)*X(I+1,J)-BB(I,J)* &
+       X(I+1,J+1)-CX(I,J)*X(I+2,J+1)-CY(I,J)*X(I+1,J+2)
+      DO 220 N=1,I2
+      DUM2(N)=0.
+      DO 218 M=1,I2
+ 218  DUM2(N)=DUM2(N)+DUM1(M)*RINV(M,N,NB)
+      H(N+1,JS+1)=DUM2(N)
+ 220  X(N+1,JS+1)=X(N+1,JS+1)+DUM2(N)
+! PERIODIC
+      H(1,JS+1)=H(I1,JS+1)
+      H(I0,JS+1)=H(2,JS+1)
+      X(1,JS+1)=X(I1,JS+1)
+      X(I0,JS+1)=X(2,JS+1)
+      IF (NB.EQ.1) GO TO 250
+      DO 230 M=1,I2
+ 230  DUM1(M)=H(M+1,JS+1)*CY(M,JS-1)
+      J=IE(NB-1)
+      DO 240 N=1,I2
+      DUM2(N)=0.
+      DO 238 M=1,I2
+ 238  DUM2(N)=DUM2(N)+DUM1(M)*RINV1(M,N,NB-1)
+ 240  H(N+1,J)=DUM2(N)
+      H(1,J)=H(I1,J)
+      H(I0,J)=H(2,J)
+ 250  DO 300 J=JS,JF
+! PERIODIC
+      H(1,J+1)=H(I1,J+1)
+      H(I0,J+1)=H(2,J+1)
+      DO 299 I=1,I2
+      H(I+1,J+2)=(-AX(I,J)*H(I,J+1)-AY(I,J)*H(I+1,J)-BB(I,J)* &
+       H(I+1,J+1)-CX(I,J)*H(I+2,J+1))/CY(I,J)
+ 299  X(I+1,J+2)=X(I+1,J+2)+H(I+1,J+2)
+      X(1,J+2)=X(I1,J+2)
+ 300  X(I0,J+2)=X(2,J+2)
+! PERIODIC
+      J1=IE(NBLK)
+      DO 400 J=2,J1
+      X(1,J)=X(I1,J)
+ 400  X(I0,J)=X(2,J)
+      END subroutine
+
+SUBROUTINE REPBIR_PERIOD(AX,AY,BB,CX,CY,RINV,RINV1,DUM0,DUM1,DUM2,F,H,X,IE,I0,I2,M0,M2,NBLK)
+! ----------------------------------------------------------------------
+  INTEGER, INTENT (IN) :: I0,I2,M0,M2,NBLK
+  REAL(8) :: RINV(M2,M2,*),RINV1(M2,M2,*),DUM0(M2,*),DUM1(*),DUM2(*),H(M0,*),X(I0,*)
+  REAL :: AX(I2,*),AY(I2,*),BB(I2,*),CX(I2,*),CY(I2,*),F(M2,*)
+  INTEGER :: IE(*)
+  
+  ! diagonalize R
+  !write(*,*) "Dimsize F",size(F)
+  !write(*,*) "Dimsize OBB",size(OBB)
+  !write(*,*) "IE(NBLK) = ", IE(NBLK), " J2 = ",J2
+  !write(*,*) "IE = ",IE(1:NBLK)
+
+  I1 = I0-1
+  JS=1
+  DO NB=1,NBLK
+    JF=IE(NB)-2
+    DO J=JS,JF
+    X(1,J+1) = X(I1, J+1)
+    X(I0,J+1) = X(2, J+1)
+    DO I=1,M2
+      X(I+1,J+2)=(F(I,J)-AX(I,J)*X(I,J+1)-AY(I,J)*X(I+1,J)-BB(I,J)*X(I+1,J+1)-CX(I,J)*X(I+2,J+1))/CY(I,J)
+    ENDDO
+    ENDDO
+    X(1, JF+2) = X(I1,JF+2)
+    X(I0, JF+2) = X(2,JF+2)
+    IF (NB.EQ.NBLK) GO TO 150
+    J=IE(NB)-1
+    DO I=1,M2
+      DUM1(I)=F(I,J)-AX(I,J)*X(I,J+1)-AY(I,J)*X(I+1,J)-BB(I,J)*X(I+1,J+1)-CX(I,J)*X(I+2,J+1)-CY(I,J)*X(I+1,J+2)
+    ENDDO
+    J=IE(NB)
+    DO N=1,M2
+      DUM2(N)=0.
+      DO M=1,M2
+        DUM2(N)=DUM2(N)+DUM1(M)*RINV1(M,N,NB)
+      ENDDO
+      DUM0(N,NB)=X(N+1,J)
+      X(N+1,J)=X(N+1,J)-DUM2(N)
+    ENDDO
+    X(1,J) = X(I1,J)
+    X(I0,J) = X(2,J)
+150 JS=IE(NB)
+  ENDDO
+  DO NBS=1,NBLK
+    NB=NBLK-NBS+1
+    JS=1
+    IF (NB.NE.1) JS=IE(NB-1)
+    JF=IE(NB)-2
+    IF (NB.EQ.NBLK) GO TO 201
+    J=IE(NB)
+    DO N=1,M2
+      X(N+1,J)=DUM0(N,NB)
+    ENDDO
+201 N=IE(NB)
+    DO J=JS,N
+    DO I=1,M0
+      H(I,J)=0.
+    ENDDO
+    ENDDO
+    J=IE(NB)-1
+    X(1,J+1)=X(I1,J+1)
+    X(I0,J+1)=X(2,J+1)
+    DO I=1,M2
+      DUM1(I)=F(I,J)-AX(I,J)*X(I,J+1)-AY(I,J)*X(I+1,J)-BB(I,J)*X(I+1,J+1)-CX(I,J)*X(I+2,J+1)-CY(I,J)*X(I+1,J+2)
+    ENDDO
+    DO N=1,M2
+      DUM2(N)=0.
+      DO M=1,M2
+        DUM2(N)=DUM2(N)+DUM1(M)*RINV(M,N,NB)
+      ENDDO
+      H(N+1,JS+1)=DUM2(N)
+      X(N+1,JS+1)=X(N+1,JS+1)+DUM2(N)
+    ENDDO
+    H(1,JS+1)=H(I1,JS+1)
+    H(I0,JS+1)=H(2,JS+1)
+    X(1,JS+1)=X(I1,JS+1)
+    X(I0,JS+1)=X(2,JS+1)
+    IF (NB.EQ.1) GO TO 250
+    DO M=1,M2
+      DUM1(M)=H(M+1,JS+1)*CY(M,JS-1)
+    ENDDO
+    J=IE(NB-1)
+    DO N=1,M2
+      DUM2(N)=0.
+      DO M=1,M2
+        DUM2(N)=DUM2(N)+DUM1(M)*RINV1(M,N,NB-1)
+      ENDDO
+      H(N+1,J)=DUM2(N)
+    ENDDO
+    H(1,J)=H(I1,J)
+    H(I0,J)=H(2,J)
+250 DO J=JS,JF
+    H(1,J+1)=H(I1,J+1)
+    H(I0,J+1)=H(2,J+1)
+    DO I=1,M2
+      H(I+1,J+2)=(-AX(I,J)*H(I,J+1)-AY(I,J)*H(I+1,J)-BB(I,J)*H(I+1,J+1)-CX(I,J)*H(I+2,J+1))/CY(I,J)
+      X(I+1,J+2)=X(I+1,J+2)+H(I+1,J+2)
+    ENDDO
+    X(1,J+2)=X(I1,J+2)
+    X(I0,J+2)=X(2,J+2)
+    ENDDO
+  ENDDO
+  J1=IE(NBLK)
+  DO J=2,J1
+  X(1,J)=X(I1,J)
+  X(I0,J)=X(2,J)
+  ENDDO 
+END SUBROUTINE REPBIR_PERIOD
 SUBROUTINE REPBIR(AX,AY,BB,CX,CY,RINV,RINV1,DUM0,DUM1,DUM2,F,H,X,IE,I0,I2,M0,M2,NBLK)
 ! ----------------------------------------------------------------------
   INTEGER, INTENT (IN) :: I0,I2,M0,M2,NBLK
@@ -21,7 +229,7 @@ SUBROUTINE REPBIR(AX,AY,BB,CX,CY,RINV,RINV1,DUM0,DUM1,DUM2,F,H,X,IE,I0,I2,M0,M2,
   !write(*,*) "IE = ",IE(1:NBLK)
   !write(*,*) AX(4,4),AY(4,4),BB(4,4),OBB(4,4),CX(4,4),CY(4,4)
   !F(1:M2,1:IE(NBLK)-2) = F(1:M2,1:IE(NBLK)-2) *OBB(1:M2,1:IE(NBLK)-2)
-  JF = IE(NBLK)-2
+  !JF = IE(NBLK)-2
   !write(*,*) 'ax'
   !write(*,*) ax(:,1:jf)
   !write(*,*) 'al'
@@ -271,7 +479,7 @@ subroutine p_bicgstab_le(al,ab,ac,ar,at,b,x,cl,cb,cc,cr,ct,i2,j2)
   ph = 0.
   sh = 0.
 
-  do while(sqrt(tp) .gt. 1e-7 .and. iter .lt. 1000) 
+  do while(sqrt(tp) .gt. 1e-8 .and. iter .lt. 1000) 
      rho=1.d0
      alpha=1.d0
      w=1.d0
@@ -287,10 +495,10 @@ subroutine p_bicgstab_le(al,ab,ac,ar,at,b,x,cl,cb,cc,cr,ct,i2,j2)
 
      res=sqrt(tp)
      print*,iter,'res = ', res
-     if (res .lt. 1e-7) then ! periodic boundary 
+     if (res .lt. 1e-8) then ! periodic boundary 
        return
      endif
-     do while (sqrt(tp)/res .gt. 1e-3 )
+     do while (sqrt(tp)/res .gt. 1e-8 )
         iter=iter+1
         call p_inprod(r,rh,rhn,i2,j2)
         beta=(rhn/rho)*(alpha/w)
@@ -334,6 +542,12 @@ subroutine p_bicgstab_le(al,ab,ac,ar,at,b,x,cl,cb,cc,cr,ct,i2,j2)
   end do !while (sqrt(tp) .gt. 1e-7 .and. iter .lt. 10000) goto 10
 
       call solver_boundary_update(x,i2,j2)
+      write(*,*) 'check boundary'
+  write(*,*) x(1,78:80)
+  write(*,*) x(181,78:80)
+  write(*,*) x(2,78:80)
+  write(*,*) x(182,78:80)
+      write(*,*) 'check boundary'
       continue
 end subroutine 
 subroutine p_csi(al,ab,ac,ar,at,mineig,maxeig,b,x,cl,cb,cc,cr,ct,i2,j2)
@@ -394,6 +608,10 @@ subroutine p_csi(al,ab,ac,ar,at,mineig,maxeig,b,x,cl,cb,cc,cr,ct,i2,j2)
 
   end do !while (sqrt(tp) .gt. 1e-7 .and. iter .lt. 10000) goto 10
   call solver_boundary_update(x,i2,j2)
+  write(*,*) x(1,78:80)
+  write(*,*) x(181,78:80)
+  write(*,*) x(2,78:80)
+  write(*,*) x(182,78:80)
   continue
 end subroutine 
 
@@ -553,15 +771,17 @@ subroutine preconditioning(cl,cb,cc,cr,ct,p,ph,i2,j2)
 
 end subroutine
 subroutine solver_boundary_update(x,i2,j2)
+#include "namelist.in_GLOBAL"
   integer, intent(in) :: i2,j2 ! dimensions
-  real*8,intent(in),dimension(i2+2,j2+2) :: x
+  real*8,intent(inout),dimension(i2+2,j2+2) :: x
 
   !local variables
   integer :: i,j
 #ifdef FLAG_PERIODIC_WE
+        write(*,*) 'boundary update'
               DO J=2,J2+1
                 X(1,J)=X(I2+1,J)
-                X(I0,J)=X(2,J)
+                X(I2+2,J)=X(2,J)
               END DO
 #endif
 end subroutine solver_boundary_update

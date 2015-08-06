@@ -11,7 +11,7 @@ SUBROUTINE FS_GLOBAL
 ! ----------------------------------------------------------------------
 #include "namelist.in_GLOBAL"
 USE OCN_PARA_GLOBAL
-USE GRID_VAR_GLOBAL, ONLY: RINV,RINV1,DUM0,DUM1,DUM2,XX,H,X,S,AL,AB,AC,OAC,AR,AT,SRC,CL,CB,CC,OCC,CR,CT,IE
+USE GRID_VAR_GLOBAL, ONLY: RINV,RINV1,DUM0,DUM1,DUM2,XX,H,X,S,AL,AB,AC,AR,AT,SRC,CL,CB,CC,OCC,CR,CT,IE
 USE GRID_VAR_GLOBAL, ONLY: RHO,Mcrho,McTP,McS,McTPTP,McSTP,P0,PX,PY,U1,U2,V1,V2,S1,S2,T1,T2,P,ULF,VLF,SLF,TLF,EV,HV,F,TANPHI,SUMIN
 USE GRID_VAR_GLOBAL, ONLY: U,V,W
 USE GRID_VAR_GLOBAL, ONLY: PBAR,PVAR,XBAR,UCLI,VCLI,RMSV,SBAR,TBAR
@@ -1143,6 +1143,7 @@ real :: seavol,rivervol,storet,stores
 #ifdef _DEBUG_
   PRINT*,'Pass Step 12-13'
 #endif
+
   ! ============================================================================== !
   ! 14. ITERATE EVP SOLVER TO GET EXACTLY NON-DIVERGENT BAROTROPIC MODE (P0,U,V)   !
   ! ============================================================================== !
@@ -1169,6 +1170,11 @@ real :: seavol,rivervol,storet,stores
       END DO
     END DO
 
+!!!!hyedit 
+    U = 1.0
+    V = 0.0
+    W(:,:,K0) = 0.0
+
 #ifdef FLAG_FS
     DO K=K1,1,-1
       TEMP1=1./ODZ(K)
@@ -1182,7 +1188,7 @@ real :: seavol,rivervol,storet,stores
     END DO
     DO J=2,J1; JJ=J-1;      !(J:CELL, JJ:SIZE OF S, EASY TO READ)
       DO I=2,I1; II=I-1;    !(I:CELL, II:SIZE OF S, EASY TO READ)
-        S(II,JJ)=W(I,J,1)*OAC(II,JJ)
+        S(II,JJ)=W(I,J,1)
       END DO
     END DO
 #else
@@ -1198,7 +1204,7 @@ real :: seavol,rivervol,storet,stores
     END DO
     DO J=2,J1; JJ=J-1;      !(J:CELL, JJ:SIZE OF S, EASY TO READ)
       DO I=2,I1; II=I-1;    !(I:CELL, II:SIZE OF S, EASY TO READ)
-        S(II,JJ)=-W(I,J,KB(I,J)+1)*OAC(II,JJ)
+        S(II,JJ)=-W(I,J,KB(I,J)+1)
       END DO
     END DO
 #endif
@@ -1802,18 +1808,30 @@ real :: seavol,rivervol,storet,stores
     real, parameter  :: pi=3.1415926535897932384626433832795029
     real*8 :: err1,err2
     real*8 :: mineig, maxeig
-    real*8, dimension(i0,j0) :: x1
+    real*8 :: arbit, arbit1
+    real*8, dimension(i0,j0) :: x1,x0
 
     DO J=1,J2+2
       DO I=1,I2+2
-        X(I,J)= cos((I-2)/real(I2)*2.0*pi )
+        !X(I,J)= cos((I-2)/real(I2)*2.0*pi ) +1.0 ! TS
+        !X(I,J)= cos((I-2)/real(I2)*2.0*pi )
+        X(I,J)= 0.0
+        !X(I,J)=.5*sin((I-2)/real(I2)*2.0*pi)*cos((J-2)/real(I2))
       END DO
     END DO
-    write(*,*) "intial value"
+    x0 = x
+    write(*,*) "==============intial value========="
+    write(*,*) X(:,1)
+    write(*,*) "==============intial value========="
     write(*,'(3e13.3)') X(1,10),X(2,10),X(3,10)
     write(*,'(3e13.3)') X(I2,10),X(I2+1,10),X(I2+2,10)
     !X = 1.0
-    X1(:,:) = X(:,:)
+    !AL = -0.25
+    !AB = -0.25
+    !AC =  1.0
+    !AR = -0.25
+    !AT = -0.25
+
     S(:,:) = 0.0
     DO J=2,J2+1
       DO I=2,I2+1
@@ -1821,29 +1839,63 @@ real :: seavol,rivervol,storet,stores
       END DO
     END DO
 
-    X(3:I2-1,3:J2-1) = 0.0
-!TS    X1(:,:) = X(:,:)
+    DO J=3,J2-1
+      DO I=3,I2-1
+        X(I,J) = 1.0
+      END DO
+    END DO
+    !!X(3:I2-1,3:J2-1) = 1.0
+    X1(:,:) = X(:,:)
 
     IF (FL_EVP_STP == 0) THEN ! DTRAC, NPBTAI
-      CALL REPBIR(AL,AB,AC,AR,AT,RINV,RINV1,DUM0,DUM1,DUM2,S,H,X,IE,I0,I2,I0,I2,NB0)        
-      !call p_bicgstab_le(al,ab,ac,ar,at,s,x1,al,ab,ac,ar,at,i2,j2)
-      do j = 2,j2+1
-        do i = 2,i2+1
-          err1  = x1(i,j) - x(i,j) 
-          err2  = min(abs(x1(i,j)),abs(x(i,j)))
-          if ( abs(err1) .ge. 1.0 .and. err1/err2 .ge. 1.0e-1 ) then
-          ! write(*,'(2I5,5e13.3)') i,j,x1(i,j),x(i,j),oac(i-1,j-1),err1,err1/err2
-           write(*,'(2I5,5e13.3)') i,j,x1(i,j),x(i,j)
+      !CALL REPBIR_PERIOD(AL,AB,AC,AR,AT,RINV,RINV1,DUM0,DUM1,DUM2,S,H,X,IE,I0,I2,I0,I2,NB0)        
+      CALL REP1(AL,AB,AC,AR,AT,RINV,RINV1,DUM0,DUM1,DUM2,S,H,X,IE,I0,I2,NB0)        
+      call p_bicgstab_le(al,ab,ac,ar,at,s,x1,al,ab,ac,ar,at,i2,j2)
+     
+      arbit  = (x (10,10)-x0(10,10))
+      arbit1 = (x1(10,10)-x0(10,10))
+      x(:,2:j2+1) = x(:,2:j2+1) -arbit
+      x1(:,2:j2+1) = x1(:,2:j2+1) -arbit1
+      !do j = 2,j2+1
+      !  do i = 2,i2+1
+      !    err1  = x1(i,j) - x(i,j) 
+      !    err2  = min(abs(x1(i,j)),abs(x(i,j)))
+      !    if ( abs(err1) .ge. 1.0 .and. err1/err2 .ge. 1.0e-1 ) then
+      !    ! write(*,'(2I5,5e13.3)') i,j,x1(i,j),x(i,j),oac(i-1,j-1),err1,err1/err2
+      !     write(*,'(2I5,5e13.3)') i,j,x1(i,j),x(i,j)
+      !    end if 
+      !  end do 
+      !end do 
+      do j = 1,j2+2
+        do i = 1,i2+2
+          err1  = x1(i,j) - x0(i,j) 
+          if ( abs(err1) .ge. 1.0e-3 ) then
+           write(*,'(A5,2I5,5e13.3)') "bicg0 ", i,j,x0(i,j),x1(i,j)
+          end if 
+        end do 
+      end do 
+      do j = 1,j2+2
+        do i = 1,i2+2
+          err1  = x(i,j) - x0(i,j) 
+          if ( abs(err1) .ge. 1.0e-3 ) then
+           write(*,'(A5,2I5,5e13.3)') "evp0  ", i,j,x0(i,j), x(i,j)
           end if 
         end do 
       end do 
       err1 = maxval(abs(x1-x))
       err2 = norm2(x1-x)
       
-      write(*,'(A20,3f15.5)') "EVP-BICG Max Norm2",err1,err2,norm2(x)
+      write(*,'(A20,3f20.11)') "EVP-BICG PointErr NormErr NormX ",err1,err2,norm2(x)
       write(*,'(A20,2I)') "Max error at", maxloc(abs(x1-x))
       write(*,'(A20,2I)') "Dimensions", I2,J2
-      open(unit=110,file="evp-bicg.bin",action="write",form="unformatted")
+
+      open(unit=110,file="evp-solution.bin",action="write",form="unformatted")
+      write(110) x  -x0
+      close(110)
+      open(unit=110,file="bicg-solution.bin",action="write",form="unformatted")
+      write(110) x1 -x0
+      close(110)
+      open(unit=110,file="evp-bicg-sol.bin",action="write",form="unformatted")
       write(110) x1-x
       close(110)
       stop
@@ -1877,7 +1929,7 @@ real :: seavol,rivervol,storet,stores
                 CB (I-IL+1,J)=AB(I,J)
                 CT (I-IL+1,J)=AT(I,J)
                 CC (I-IL+1,J)=AC(I,J)
-                OCC (I-IL+1,J)=OAC(I,J)
+                !OCC (I-IL+1,J)=OAC(I,J)
               END DO
               DO I=IR,IR2
                 SRC(I-IL+1,J)=S (I-IR+1,J)
@@ -1886,7 +1938,7 @@ real :: seavol,rivervol,storet,stores
                 CB (I-IL+1,J)=AB(I-IR+1,J)
                 CT (I-IL+1,J)=AT(I-IR+1,J)
                 CC (I-IL+1,J)=AC(I-IR+1,J)
-                OCC (I-IL+1,J)=OAC(I-IR+1,J)
+                !OCC (I-IL+1,J)=OAC(I-IR+1,J)
               END DO
             END DO
             CALL REPBIR(CL,CB,CC,CR,CT,&
@@ -1912,29 +1964,60 @@ real :: seavol,rivervol,storet,stores
           END IF
         END DO
       END DO NITERLOOP      
-      !call p_bicgstab_le(al,ab,ac,ar,at,s,x1,al,ab,ac,ar,at,i2,j2)
 
-      do j = 2,j2+1
-        do i = 2,i2+1
-          err1  = x1(i,j) - x(i,j) 
-          err2  = max(abs(x1(i,j)),abs(x(i,j)))
+      call p_bicgstab_le(al,ab,ac,ar,at,s,x1,al,ab,ac,ar,at,i2,j2)
+      arbit  = (x (10,10)-x0(10,10))
+      arbit1 = (x1(10,10)-x0(10,10))
+      !x(:,2:j2+1) = x(:,2:j2+1) -arbit
+      x1(:,2:j2+1) = x1(:,2:j2+1) -arbit1
+
+
+      !do j = 2,j2+1
+      !  do i = 2,i2+1
+      !    err1  = x1(i,j) - x(i,j) 
+      !    err2  = max(abs(x1(i,j)),abs(x(i,j)))
+      !    if ( abs(err1) .ge. 1.0e-3 ) then
+      !     !write(*,'(2I5,5e13.3)') i,j,x1(i,j),x(i,j),oac(i-1,j-1),err1,err1/err2
+      !     write(*,'(2I5,5e13.3)') i,j,x1(i,j),x(i,j)
+      !    end if 
+      !  end do 
+      !end do 
+      !err1 = maxval(abs(x1-x))
+      !err2 = norm2(x1-x)
+      
+      do j = 1,j2+2
+        do i = 1,i2+2
+          err1  = x1(i,j) - x0(i,j) 
           if ( abs(err1) .ge. 1.0e-3 ) then
-           !write(*,'(2I5,5e13.3)') i,j,x1(i,j),x(i,j),oac(i-1,j-1),err1,err1/err2
-           write(*,'(2I5,5e13.3)') i,j,x1(i,j),x(i,j)
+           write(*,'(A5,2I5,5e13.3)') "bicg1 ", i,j,x0(i,j),x1(i,j)
+          end if 
+        end do 
+      end do 
+      do j = 1,j2+2
+        do i = 1,i2+2
+          err1  = x(i,j) - x0(i,j) 
+          if ( abs(err1) .ge. 1.0e-3 ) then
+           write(*,'(A5,2I5,5e13.3)') "evp1  ", i,j,x0(i,j), x(i,j)
           end if 
         end do 
       end do 
       err1 = maxval(abs(x1-x))
       err2 = norm2(x1-x)
       
-      write(*,'(A20,3e15.8)') "EVP-TURE Max Norm2",err1,err2,norm2(x)
+      write(*,'(A20,3f20.11)') "EVP-BICG PointErr NormErr NormX ",err1,err2,norm2(x)
       write(*,'(A20,2I)') "Max error at", maxloc(abs(x1-x))
       write(*,'(A20,2I)') "Dimensions", I2,J2
-      open(unit=110,file="evp-bicg.bin",action="write",form="unformatted")
+
+      open(unit=110,file="evp-solution.bin",action="write",form="unformatted")
+      write(110) x  -x0
+      close(110)
+      open(unit=110,file="bicg-solution.bin",action="write",form="unformatted")
+      write(110) x1 -x0
+      close(110)
+      open(unit=110,file="evp-bicg-sol.bin",action="write",form="unformatted")
       write(110) x1-x
       close(110)
       stop
-
 
 
     else if (FL_EVP_STP == 2 ) then ! call bicg

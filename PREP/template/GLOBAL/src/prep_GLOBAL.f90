@@ -9,7 +9,7 @@ SUBROUTINE PREP_TIMCOM
   USE GRID_VAR_GLOBAL, ONLY: A,XDEG,YV,YVDEG,YDEG,CS,OCS,DX,ODX,DY,ODY,CSV,OCSV,DXV,ODXV,DYV,ODYV,VAR_ALLOCATE_METRIC
   USE GRID_VAR_GLOBAL, ONLY: Y,VAR_ALLOCATE_METRIC_PRE
   USE GRID_VAR_GLOBAL, ONLY: Z,ODZ,ODZW,VAR_ALLOCATE_ZFS
-  USE GRID_VAR_GLOBAL, ONLY: RINV,RINV1,DUM0,DUM1,DUM2,XX,H,X,S,AL,AB,AC,OAC,AR,AT,SRC,CL,CB,CC,CR,CT,IE,VAR_ALLOCATE_SEVP
+  USE GRID_VAR_GLOBAL, ONLY: RINV,RINV1,DUM0,DUM1,DUM2,XX,H,X,S,AL,AB,AC,AR,AT,SRC,CL,CB,CC,CR,CT,IE,VAR_ALLOCATE_SEVP
   USE GRID_VAR_GLOBAL, ONLY: DEPTH
   USE GRID_VAR_GLOBAL, ONLY: VBK,HBK,VAR_ALLOCATE_WINDMX_MAIN
   
@@ -235,7 +235,6 @@ SUBROUTINE PREP_TIMCOM
 ! PRINT*,'hahaha we have free surface now!!!',DT,G,1./(.5*DT**2*G)
 ! PAUSE 
  GAMMA=1./(.5*DT**2*G)
- write(*,*) "Free Surface GAMMA =",gamma, " AC(50,50) =",AC(50,50)
 #endif
 
     DO J=1,J2
@@ -243,19 +242,33 @@ SUBROUTINE PREP_TIMCOM
         AC(I,J)=-AL(I,J)-AR(I,J)-AB(I,J)-AT(I,J)-GAMMA
       END DO
     END DO
-    ! Diagonalize Coefficient Matrix 
-    OAC(:,:) =  1.0/AC(:,:)
-    AL(:,:)  = AL(:,:) * OAC(:,:)
-    AB(:,:)  = AB(:,:) * OAC(:,:)
-    AR(:,:)  = AR(:,:) * OAC(:,:)
-    AT(:,:)  = AT(:,:) * OAC(:,:)
-    AC(:,:)  = 1.0
+
+    !!!! test ideal case  hyedit
+    AL = -0.25
+    AB = -0.25
+    AC =  1.0
+    AR = -0.25
+    AT = -0.25
+
+    ! Neumann  boundary on NS
+    DO I=1,I2
+        J = J2 ! north 
+        AC(i,j)=AC(i,j)+AT(i,j)
+        AT(i,j) = 0.
+        J = 1  ! south
+        AC(i,j)=AC(i,j)+AB(i,j)
+        AB(i,j) = 0.
+    END DO
+
+
 
     WRITE(*,295)
     295  FORMAT('ENTER EVP PREPROCESSOR')
   
     IF (FL_EVP_STP == 0) THEN !LINE #316
-      CALL PRE(AL,AB,AC,AR,AT,RINV,RINV1,H,IE,I2,I0,I2,NB0)
+      !CALL PRE(AL,AB,AC,AR,AT,RINV,RINV1,H,IE,I2,I0,I2,NB0)
+      !CALL PRE_PERIOD(AL,AB,AC,AR,AT,RINV,RINV1,H,IE,I2,I0,I2,NB0)
+      CALL PRE1(AL,AB,AC,AR,AT,RINV,RINV1,H,IE,I0,I2,NB0)
     ELSE 
       !CASE_NAME=='GLOBAL'
       ! we assume uniform BIR strip widths
@@ -304,13 +317,143 @@ SUBROUTINE PREP_TIMCOM
       END DO  !DO STARTED AT LINE #332    
     END IF !IF STARTED AT LINE #316, IF (FL_EVP_STP == 0)
     
-    WRITE(FNO_EVP) AL,AR,AB,AT,AC,OAC,RINV,RINV1,IE
+    WRITE(FNO_EVP) AL,AR,AB,AT,AC,RINV,RINV1,IE
   
   END SUBROUTINE INITFS
+! ******************************
+! ELLIPTIC SOLVER PREPROCESSOR *
+! ******************************
+! ----------------------------------------------------------------------
+      SUBROUTINE PRE1(AX,AY,BB,CX,CY,RINV,RINV1,H,IE,I0,I2,NBLK)
+! ----------------------------------------------------------------------
+      REAL*8 RINV,RINV1,H
+      REAL:: AX,AY,BB,CX,CY
+      INTEGER:: I0, I2,IE,NBLK,N
+      DIMENSION AX(I2,1),AY(I2,1),BB(I2,1),CX(I2,1),CY(I2,1),&
+        RINV(I2,I2,1),RINV1(I2,I2,1),H(I0,1),IE(1)
+! Periodic
+      I1=I0-1
+      JL=1
+      NB=0
+ 100  NB=NB+1
+      WRITE(*,111) NB,NBLK
+ 111  FORMAT ('Processing block #',I3,' out of',I3,' total evp solver blocks')
+      JH=IE(NB)
+      JHP=JH+1
+      JHM=JH-2
+      JG=JL+1
+      DO 250 NG=1,I2
+      IG=NG+1
+      DO 210 J=JL,JHP
+      DO 210 I=1,I0
+ 210  H(I,J)=0.
+      H(IG,JG)=1.
+      H(1,JG)=H(I1,JG)
+      H(I0,JG)=H(2,JG)
+      IF (NB.EQ.1) GO TO 220
+      DO 218 N=1,I2
+ 218  H(N+1,JL)=RINV1(NG,N,NB-1)*CY(IG-1,JG-2)
+ 220  DO 225 J=JL,JHM
+      DO 225 I=1,I2
+! Periodic
+      H(1,J+1)=H(I1,J+1)
+      H(I0,J+1)=H(2,J+1)
+ 225  H(I+1,J+2)=-(AX(I,J)*H(I,J+1)+AY(I,J)*H(I+1,J)+BB(I,J)*H(I+1,J+1)+ &
+          CX(I,J)*H(I+2,J+1))/CY(I,J)
+      J=JH-1
+      DO 230 I=1,I2
+      H(1,J+1)=H(I1,J+1)
+      H(I0,J+1)=H(2,J+1)
+ 230  RINV(NG,I,NB)=AX(I,J)*H(I,J+1)+AY(I,J)*H(I+1,J)+BB(I,J)* &
+          H(I+1,J+1)+CX(I,J)*H(I+2,J+1)
+      IF (NB.EQ.NBLK) GO TO 250
+      J=IE(NB)
+      DO 240 N=1,I2
+ 240  RINV(NG,N,NBLK)=H(N+1,J)
+! Periodic
+      H(1,JG)=0.
+      H(I0,JG)=0.
+ 250  H(IG,JG)=0.
+      CALL MATINV(RINV(1,1,NB),I2)
+      IF (NB.EQ.NBLK) RETURN
+      DO 260 I=1,I2
+      DO 260 J=1,I2
+      RINV1(I,J,NB)=0.
+      DO 260 K=1,I2
+ 260  RINV1(I,J,NB)=RINV1(I,J,NB)-RINV(I,K,NB)*RINV(K,J,NBLK)
+      JL=JH
+      GO TO 100
+      END subroutine
 
   !*******************************************************************
   ! ELLIPTIC SOLVER PREPROCESSOR *
   !*******************************************************************
+  SUBROUTINE PRE_PERIOD(AX,AY,BB,CX,CY,RINV,RINV1,H,IE,I2,M0,M2,NBLK)
+    ! ----------------------------------------------------------------------
+    ! M2 is the working BIR strip width (I2 is EVENLY divisible by M2)
+    REAL(8) RINV,RINV1,H
+    REAL:: AX,AY,BB,CX,CY
+    INTEGER:: I2,M2,M0,IE,NBLK,N
+    DIMENSION AX(I2,*),AY(I2,*),BB(I2,*),CX(I2,*),CY(I2,*),   &
+    RINV(M2,M2,*),RINV1(M2,M2,*),H(M0,*),IE(*)
+    I1=I0-1 ! periodic
+    JL=1
+    NB=0
+    100  NB=NB+1
+    WRITE(*,111) NB,NBLK
+    111  FORMAT ('Processing block #',I3,' out of',I3,' total evp solver blocks')
+    JH=IE(NB)
+    JHP=JH+1
+    JHM=JH-2
+    JG=JL+1
+    DO 250 NG=1,M2
+    IG=NG+1
+    DO 210 J=JL,JHP
+    DO 210 I=1,M0
+    210  H(I,J)=0.
+    H(IG,JG)=1.
+    H(1,JG)=H(I1,JG)
+    H(I0,JG)=H(2,JG)
+    IF (NB.EQ.1) GO TO 220
+    DO N=1,M2
+    H(N+1,JL)=RINV1(NG,N,NB-1)*CY(IG-1,JG-2)
+    END DO
+    220  DO 225 J=JL,JHM
+    DO 225 I=1,M2
+      H(1,J+1)=H(I1,J+1)
+      H(I0,J+1)=H(2,J+1)
+    225  H(I+1,J+2)=-(AX(I,J)*H(I,J+1)+AY(I,J)*H(I+1,J)+BB(I,J)*H(I+1,J+1)+   &
+    CX(I,J)*H(I+2,J+1))/CY(I,J)
+    J=JH-1
+    DO 230 I=1,M2
+    H(1,J+1)=H(I1,J+1)
+    H(I0,J+1)=H(2,J+1)
+    230  RINV(NG,I,NB)=AX(I,J)*H(I,J+1)+AY(I,J)*H(I+1,J)+BB(I,J)*             &
+    H(I+1,J+1)+CX(I,J)*H(I+2,J+1)
+    
+    IF (NB.EQ.NBLK) GO TO 250
+    J=IE(NB)
+    DO N=1,M2
+      RINV(NG,N,NBLK)=H(N+1,J)
+    END DO
+      H(1,JG)=0.
+      H(I0,JG)=0.
+    250  H(IG,JG)=0.
+    CALL MATINV(RINV(1,1,NB),M2)
+    
+    IF (NB.EQ.NBLK) RETURN
+    DO I=1,M2
+      DO J=1,M2
+        RINV1(I,J,NB)=0.
+        DO K=1,M2
+          RINV1(I,J,NB)=RINV1(I,J,NB)-RINV(I,K,NB)*RINV(K,J,NBLK)
+        END DO
+      END DO
+    END DO
+    JL=JH
+    GO TO 100
+  
+  END SUBROUTINE PRE_PERIOD
   SUBROUTINE PRE(AX,AY,BB,CX,CY,RINV,RINV1,H,IE,I2,M0,M2,NBLK)
     ! ----------------------------------------------------------------------
     ! M2 is the working BIR strip width (I2 is EVENLY divisible by M2)
